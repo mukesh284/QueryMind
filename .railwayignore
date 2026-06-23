@@ -1,0 +1,4 @@
+.railway:
+  builder: dockerfile
+  dockerfile: Dockerfile
+

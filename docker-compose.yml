@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  querymind-app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      AI_API_KEY: ${AI_API_KEY}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/querymind
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: querymind123
+    depends_on:
+      - mysql
+    networks:
+      - querymind-network
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: querymind123
+      MYSQL_DATABASE: querymind
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - querymind-network
+
+networks:
+  querymind-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+

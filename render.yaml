@@ -1,0 +1,19 @@
+{
+  "name": "QueryMind",
+  "description": "AI-Powered SQL & Excel Assistant",
+  "buildCommand": "mvn clean install -DskipTests",
+  "startCommand": "java -Dserver.port=$PORT -Dspring.profiles.active=prod -Dquerymind.ai-api-key=$AI_API_KEY -jar target/querymind-ai-assistant-1.0.0.jar",
+  "plan": "free",
+  "envVars": [
+    {
+      "key": "AI_API_KEY",
+      "description": "OpenAI API Key from https://platform.openai.com/api-keys",
+      "sync": false
+    },
+    {
+      "key": "JAVA_TOOL_OPTIONS",
+      "value": "-Xmx512m -Xms256m"
+    }
+  ]
+}
+
