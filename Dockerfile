@@ -17,10 +17,7 @@ RUN mvn -B -DskipTests \
 COPY src ./src
 
 # Build the application - simple, clean approach
-RUN mvn -B clean package \
-    -DskipTests \
-    -Dmaven.test.skip=true \
-    2>&1 | tail -50
+RUN mvn clean package -DskipTests -e
 # Verify jar exists
 RUN echo "=== TARGET ===" && ls -lah /build/target
 
