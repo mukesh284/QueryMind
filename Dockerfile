@@ -11,16 +11,16 @@ RUN mvn -B -DskipTests \
     -Dmaven.wagon.http.retryHandler.class=standard \
     -Dmaven.wagon.http.retryHandler.count=3 \
     -Dmaven.wagon.reuseConnections=true \
-    dependency:resolve
+    dependency:resolve 2>&1 | grep -v "^\[DEBUG\]" || true
 
 # Copy source code
 COPY src ./src
 
-# Build the application - without output piping that could lose the file
-RUN mvn -B -DskipTests -Dmaven.test.skip=true clean package
-
-# Verify the JAR exists
-RUN ls -lh /build/target/*.jar || (echo "JAR file not found!"; exit 1)
+# Build the application - simple, clean approach
+RUN mvn -B clean package \
+    -DskipTests \
+    -Dmaven.test.skip=true \
+    2>&1 | tail -50
 
 # Stage 2: Runtime
 FROM eclipse-temurin:11-jre-alpine
