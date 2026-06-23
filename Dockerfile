@@ -1,5 +1,5 @@
 # Stage 1: Build with Maven
-FROM maven:3.8.1-openjdk-11 as builder
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
 
 WORKDIR /build
 
@@ -23,13 +23,11 @@ RUN mvn -B clean package \
     2>&1 | tail -50
 
 # Stage 2: Runtime
-FROM eclipse-temurin:11-jre-alpine
-
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
 # Copy the built jar from builder stage
-COPY --from=builder /build/target/querymind-ai-assistant-1.0.0.jar querymind.jar
-
+COPY --from=builder /build/target/*.jar querymind.jar
 # Expose port
 EXPOSE 8080
 
