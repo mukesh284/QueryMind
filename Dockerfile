@@ -21,13 +21,16 @@ RUN mvn -B clean package \
     -DskipTests \
     -Dmaven.test.skip=true \
     2>&1 | tail -50
+# Verify jar exists
+RUN echo "=== TARGET ===" && ls -lah /build/target
 
+RUN echo "=== JARS ===" && find /build -name "*.jar"
 # Stage 2: Runtime
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
 # Copy the built jar from builder stage
-COPY --from=builder /build/target/*.jar querymind.jar
+COPY --from=builder /build/target/querymind-ai-assistant-1.0.0.jar /app/querymind.jar
 # Expose port
 EXPOSE 8080
 
