@@ -14,7 +14,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * AI Service for interacting with OpenAI API
+ * AI Service supporting multiple free LLM providers
+ * Supports: Groq (FREE!), Ollama (LOCAL), Hugging Face, Together AI, OpenAI
  */
 @Service
 @Slf4j
@@ -23,10 +24,37 @@ public class AIService {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
+    private static final String GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
+    private static final String OLLAMA_API = "http://localhost:11434/api/generate";
+    private static final String HUGGINGFACE_API = "https://api-inference.huggingface.co/models/";
+    private static final String TOGETHER_API = "https://api.together.xyz/v1/chat/completions";
+    private static final String OPENAI_API = "https://api.openai.com/v1/chat/completions";
+
     public AIService(AppConfig appConfig) {
         this.appConfig = appConfig;
         this.httpClient = HttpClient.newHttpClient();
         this.objectMapper = new ObjectMapper();
+    }
+
+    /**
+     * Detect which LLM provider to use
+     */
+    private String detectProvider() {
+        if (System.getenv("GROQ_API_KEY") != null) {
+            return "groq";
+        } else if (System.getenv("OLLAMA_URL") != null) {
+            return "ollama";
+        } else if (System.getenv("HUGGINGFACE_API_KEY") != null) {
+            return "huggingface";
+        } else if (System.getenv("TOGETHER_API_KEY") != null) {
+            return "together";
+        } else if (System.getenv("OPENAI_API_KEY") != null) {
+            return "openai";
+        }
+
+        // Default to Groq if no key set (will fail with helpful message)
+        log.warn("No LLM API key detected. Set GROQ_API_KEY, OLLAMA_URL, or OPENAI_API_KEY");
+        return "groq";
     }
 
     /**
@@ -161,53 +189,241 @@ public class AIService {
     }
 
     /**
-     * Call OpenAI API
+     * Call LLM API (supports multiple providers)
      */
     private String callAI(String prompt, String type) {
+        String provider = detectProvider();
+        log.info("Using LLM provider: {}", provider);
+
         try {
-            String apiKey = appConfig.getAiApiKey();
-            if (apiKey == null || apiKey.isEmpty()) {
-                throw new IllegalStateException("AI API key not configured");
+            switch (provider) {
+                case "groq":
+                    return callGroq(prompt);
+                case "ollama":
+                    return callOllama(prompt);
+                case "huggingface":
+                    return callHuggingFace(prompt);
+                case "together":
+                    return callTogether(prompt);
+                case "openai":
+                default:
+                    return callOpenAI(prompt);
             }
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", appConfig.getAiModel());
-            requestBody.put("messages", new Object[]{
-                Map.of(
-                    "role", "user",
-                    "content", prompt
-                )
-            });
-            requestBody.put("max_tokens", appConfig.getMaxTokens());
-            requestBody.put("temperature", appConfig.getTemperature());
-
-            String jsonBody = objectMapper.writeValueAsString(requestBody);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200) {
-                JsonNode jsonResponse = objectMapper.readTree(response.body());
-                String content = jsonResponse.get("choices")
-                    .get(0)
-                    .get("message")
-                    .get("content")
-                    .asText();
-                log.info("AI Response for {}: {}", type, content.substring(0, Math.min(100, content.length())));
-                return content;
-            } else {
-                log.error("AI API Error: {} - {}", response.statusCode(), response.body());
-                throw new RuntimeException("AI API call failed: " + response.body());
-            }
-        } catch (IOException | InterruptedException e) {
-            log.error("Error calling AI service", e);
+        } catch (Exception e) {
+            log.error("Error calling AI service with provider: {}", provider, e);
             throw new RuntimeException("Failed to call AI service: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Call Groq API (FREE!)
+     */
+    private String callGroq(String prompt) throws IOException, InterruptedException {
+        String apiKey = System.getenv("GROQ_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new RuntimeException("GROQ_API_KEY not set. Get free key at https://groq.com");
+        }
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "mixtral-8x7b-32768"); // Free model
+        requestBody.put("messages", new Object[]{
+            Map.of(
+                "role", "user",
+                "content", prompt
+            )
+        });
+        requestBody.put("max_tokens", 2000);
+        requestBody.put("temperature", 0.7);
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(GROQ_API))
+            .header("Authorization", "Bearer " + apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            JsonNode jsonResponse = objectMapper.readTree(response.body());
+            String content = jsonResponse.get("choices")
+                .get(0)
+                .get("message")
+                .get("content")
+                .asText();
+            log.info("Groq response received");
+            return content;
+        } else {
+            log.error("Groq API Error: {} - {}", response.statusCode(), response.body());
+            throw new RuntimeException("Groq API failed: " + response.body());
+        }
+    }
+
+    /**
+     * Call Ollama API (LOCAL, 100% FREE)
+     */
+    private String callOllama(String prompt) throws IOException, InterruptedException {
+        String ollamaUrl = System.getenv("OLLAMA_URL");
+        String model = System.getenv("OLLAMA_MODEL");
+
+        if (ollamaUrl == null) {
+            ollamaUrl = "http://localhost:11434";
+        }
+        if (model == null) {
+            model = "mistral";
+        }
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("prompt", prompt);
+        requestBody.put("stream", false);
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(ollamaUrl + "/api/generate"))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            JsonNode jsonResponse = objectMapper.readTree(response.body());
+            String content = jsonResponse.get("response").asText();
+            log.info("Ollama response received from model: {}", model);
+            return content;
+        } else {
+            log.error("Ollama API Error: {} - {}", response.statusCode(), response.body());
+            throw new RuntimeException("Ollama not running. Install from https://ollama.ai");
+        }
+    }
+
+    /**
+     * Call Hugging Face API
+     */
+    private String callHuggingFace(String prompt) throws IOException, InterruptedException {
+        String apiKey = System.getenv("HUGGINGFACE_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new RuntimeException("HUGGINGFACE_API_KEY not set. Get free key at https://huggingface.co");
+        }
+
+        String model = "mistralai/Mistral-7B-Instruct-v0.1";
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("inputs", prompt);
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(HUGGINGFACE_API + model))
+            .header("Authorization", "Bearer " + apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            JsonNode jsonResponse = objectMapper.readTree(response.body());
+            String content = jsonResponse.get(0).get("generated_text").asText();
+            log.info("Hugging Face response received");
+            return content;
+        } else {
+            log.error("Hugging Face API Error: {} - {}", response.statusCode(), response.body());
+            throw new RuntimeException("Hugging Face API failed: " + response.body());
+        }
+    }
+
+    /**
+     * Call Together AI API
+     */
+    private String callTogether(String prompt) throws IOException, InterruptedException {
+        String apiKey = System.getenv("TOGETHER_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new RuntimeException("TOGETHER_API_KEY not set. Get free key at https://www.together.ai");
+        }
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "mistralai/Mixtral-8x7B-Instruct-v0.1");
+        requestBody.put("messages", new Object[]{
+            Map.of(
+                "role", "user",
+                "content", prompt
+            )
+        });
+        requestBody.put("max_tokens", 2000);
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(TOGETHER_API))
+            .header("Authorization", "Bearer " + apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            JsonNode jsonResponse = objectMapper.readTree(response.body());
+            String content = jsonResponse.get("choices")
+                .get(0)
+                .get("message")
+                .get("content")
+                .asText();
+            log.info("Together AI response received");
+            return content;
+        } else {
+            log.error("Together AI Error: {} - {}", response.statusCode(), response.body());
+            throw new RuntimeException("Together AI API failed: " + response.body());
+        }
+    }
+
+    /**
+     * Call OpenAI API (optional, if you have a key)
+     */
+    private String callOpenAI(String prompt) throws IOException, InterruptedException {
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new RuntimeException("No LLM configured. Set one of: GROQ_API_KEY, OLLAMA_URL, HUGGINGFACE_API_KEY, TOGETHER_API_KEY, or OPENAI_API_KEY");
+        }
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", "gpt-3.5-turbo");
+        requestBody.put("messages", new Object[]{
+            Map.of(
+                "role", "user",
+                "content", prompt
+            )
+        });
+        requestBody.put("max_tokens", 2000);
+        requestBody.put("temperature", 0.7);
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(OPENAI_API))
+            .header("Authorization", "Bearer " + apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            JsonNode jsonResponse = objectMapper.readTree(response.body());
+            String content = jsonResponse.get("choices")
+                .get(0)
+                .get("message")
+                .get("content")
+                .asText();
+            log.info("OpenAI response received");
+            return content;
+        } else {
+            log.error("OpenAI API Error: {} - {}", response.statusCode(), response.body());
+            throw new RuntimeException("OpenAI API failed: " + response.body());
         }
     }
 
@@ -223,4 +439,3 @@ public class AIService {
         return callAI(prompt, "explanation");
     }
 }
-
