@@ -46,11 +46,11 @@ public class QueryHistory {
 
     private boolean successful;
 
-    enum QueryType {
+    public enum QueryType {
         SQL, EXCEL_FORMULA, XLOOKUP, POWER_BI_DAX, ANALYSIS
     }
 
-    enum OutputFormat {
+    public enum OutputFormat {
         SQL, FORMULA, DAX, EXPLANATION
     }
 }

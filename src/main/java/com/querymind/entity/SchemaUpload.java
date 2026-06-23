@@ -40,7 +40,7 @@ public class SchemaUpload {
 
     private int queryCount = 0;
 
-    enum FileType {
+    public enum FileType {
         SQL_SCHEMA, EXCEL, CSV, JSON
     }
 }
